@@ -1,0 +1,5 @@
+/.idea
+/.tmp
+*.iml
+/webservice
+/coverage.out

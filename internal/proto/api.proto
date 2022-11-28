@@ -1,0 +1,109 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "github.com/constb/tt-golang/internal/proto";
+
+import "google/protobuf/timestamp.proto";
+
+message GetBalanceInput {
+  string user_id = 1;
+}
+
+message TopUpInput {
+  string user_id = 1;
+  string currency = 2;
+  string value = 3; // number as string, "." as delimiter, only 2 digits after dot
+  string merchant_data = 4; // free-form json stored alongside top-up transaction
+}
+
+message ReserveInput {
+  string user_id = 1;
+  string currency = 2;
+  string value = 3; // number as string, "." as delimiter, only 2 digits after dot
+  string order_id = 4;
+  string item_id = 5;
+}
+
+message CancelReservationInput {
+  string user_id = 1;
+  string order_id = 4;
+  string item_id = 5;
+}
+
+message CommitReservationInput {
+  string user_id = 1;
+  string currency = 2;
+  string value = 3; // number as string, "." as delimiter, only 2 digits after dot
+  string order_id = 4;
+  string item_id = 5;
+}
+
+message GetStatisticsInput {
+  int32 year = 1;
+  int32 month = 2;
+}
+
+message ListTransactionsInput {
+  string user_id = 1;
+  int32 limit = 2; // от 1 до 100, только в первом запросе (потом берётся из курсора)
+  string after = 3; // cursor, в первом запросе пустой, потом – курсор из предыдущего ответа
+}
+
+message GenericOutput {
+  Error error = 1;
+  UserBalanceData user_balance = 2;
+}
+
+message StatisticsOutput {
+  Error error = 1;
+  map<string, string> data = 2;
+}
+
+message ListTransactionsOutput {
+  Error error = 1;
+  UserBalanceData user_balance = 2;
+  repeated UserTransaction transaction = 3;
+}
+
+message Error {
+  oneof one_error {
+    UnauthorizedError unauthorized = 1;
+    BadParameterError bad_parameter = 2;
+    UserNotFoundError user_not_found = 3;
+    NotEnoughMoneyError not_enough_money = 4;
+    InvalidCurrencyError invalid_currency = 5;
+  }
+}
+
+message UnauthorizedError {}
+
+message BadParameterError {
+  string name = 1;
+}
+
+message UserNotFoundError {}
+
+message NotEnoughMoneyError {}
+
+message InvalidCurrencyError {
+  string currency = 1;
+}
+
+message UserBalanceData {
+  string user_id = 1;
+  string currency = 2;
+  string value = 3; // number as string, "." as delimiter, only 2 digits after dot
+  string reserved_value = 4; // сумма в резерве, может быть в будущем списана или вернётся на счёт при отмене
+  bool is_overdraft = 5; // по счёту пользователя произошёл овердрафт!
+}
+
+message UserTransaction {
+  string currency = 1;
+  string value = 2; // number as string, "." as delimiter, only 2 digits after dot
+  string user_currency_value = 3; // сумма в валюте баланса пользователя
+  bool is_top_up_transaction = 4;
+  string order_id = 5;
+  string item_id = 6;
+  google.protobuf.Timestamp created_at = 15;
+}
