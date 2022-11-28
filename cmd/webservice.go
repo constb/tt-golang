@@ -21,6 +21,7 @@ func main() {
 		port = "3000"
 	}
 	logger := utils.NewLogger("webservice")
+	zap.RedirectStdLog(logger)
 
 	db, err := database.NewDatabaseConnection()
 	if err != nil {
