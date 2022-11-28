@@ -85,34 +85,34 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 			if ok {
 				logger.Info("top-up failed", zap.Error(err))
 				output.Error = protoErr
+				utils.WriteOutput(r, w, logger, &output)
 			} else {
 				logger.Error("top-up error", zap.Error(err))
 				w.WriteHeader(http.StatusInternalServerError)
+			}
+			return
+		}
+
+		logger.Info("top-up new transaction", zap.Int64("txID", txID.Int64()))
+
+		// return current balance data
+		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
+		var available, reserved decimal.Decimal
+		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if !ok {
+				logger.Error("fetch balance error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+			logger.Info("fetch balance failed", zap.Error(err))
+			output.Error = protoErr
+			output.UserBalance = nil
 		} else {
-			logger.Info("top-up new transaction", zap.Int64("txID", txID.Int64()))
-
-			// return current balance data
-			output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
-			var available, reserved decimal.Decimal
-			output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
-			if err != nil {
-				protoErr, ok := err.(*proto.Error)
-				if ok {
-					logger.Info("fetch balance failed", zap.Error(err))
-					output.Error = protoErr
-					output.UserBalance = nil
-				} else {
-					logger.Error("fetch balance error", zap.Error(err))
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-			} else {
-				output.UserBalance.Value = available.StringFixedBank(2)
-				output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-				output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-			}
+			output.UserBalance.Value = available.StringFixedBank(2)
+			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
+			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
 		}
 		utils.WriteOutput(r, w, logger, &output)
 	})
