@@ -22,7 +22,14 @@ func main() {
 	}
 	logger := utils.NewLogger("webservice")
 
-	service, err := NewBalanceWebService(logger)
+	db, err := database.NewDatabaseConnection()
+	if err != nil {
+		panic(err)
+	}
+
+	apiKey := os.Getenv("API_KEY")
+
+	service, err := NewBalanceWebService(db, logger, apiKey)
 	if err != nil {
 		logger.Panic("db init", zap.Error(err))
 	}
@@ -47,15 +54,11 @@ func main() {
 type BalanceWebService struct {
 	logger *zap.Logger
 	db     *database.BalanceDatabase
+	apiKey string
 }
 
-func NewBalanceWebService(logger *zap.Logger) (*BalanceWebService, error) {
-	db, err := database.NewDatabaseConnection()
-	if err != nil {
-		return nil, err
-	}
-
-	return &BalanceWebService{logger, db}, nil
+func NewBalanceWebService(db *database.BalanceDatabase, logger *zap.Logger, apiKey string) (*BalanceWebService, error) {
+	return &BalanceWebService{logger, db, apiKey}, nil
 }
 
 func (s *BalanceWebService) TopUpHandler() http.Handler {
@@ -113,6 +116,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
+	handler = utils.ApiKey(handler, s.apiKey)
 	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")

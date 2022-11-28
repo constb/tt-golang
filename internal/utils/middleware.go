@@ -18,6 +18,7 @@ const (
 	HeaderContentLength = "Content-Length"
 	HeaderAccept        = "Accept"
 	HeaderRequestId     = "X-Request-ID"
+	HeaderApiKey        = "X-Api-Key"
 
 	MediaTypeJson     = "application/json"
 	MediaTypeProtobuf = "application/protobuf"
@@ -49,6 +50,20 @@ func RequestID(h http.Handler) http.Handler {
 		w.Header().Set(HeaderRequestId, reqID)
 
 		h.ServeHTTP(w, r)
+	})
+}
+
+func ApiKey(h http.Handler, key string) http.Handler {
+	if key == "" {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqKey := r.Header.Get(HeaderApiKey)
+		if reqKey == key {
+			h.ServeHTTP(w, r)
+		} else {
+			w.WriteHeader(http.StatusForbidden)
+		}
 	})
 }
 
