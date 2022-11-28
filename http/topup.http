@@ -1,6 +1,16 @@
 ### no content-type, empty body, expect 400
 POST http://localhost:3000/top-up
 
+### bad currency
+POST http://localhost:3000/top-up
+content-type: application/json
+
+{
+  "userId": "lara",
+  "currency": "xxx",
+  "value": "1.00"
+}
+
 ### valid request with merchant data, JSON
 POST http://localhost:3000/top-up
 content-type: application/json
