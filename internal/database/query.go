@@ -10,8 +10,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func (d *BalanceDatabase) FetchUserBalance(ctx context.Context, userId string) (currency string, available, reserved decimal.Decimal, err error) {
-	if userId == "" {
+func (d *BalanceDatabase) FetchUserBalance(ctx context.Context, userID string) (currency string, available, reserved decimal.Decimal, err error) {
+	if userID == "" {
 		return "", decimal.Zero, decimal.Zero, proto.NewBadParameterError("user id")
 	}
 
@@ -34,7 +34,7 @@ func (d *BalanceDatabase) FetchUserBalance(ctx context.Context, userId string) (
 	}()
 
 	// 1) GET CURRENT BALANCE
-	row := tx.QueryRow(ctx, `SELECT currency, current_value FROM balance WHERE user_id = $1`, userId)
+	row := tx.QueryRow(ctx, `SELECT currency, current_value FROM balance WHERE user_id = $1`, userID)
 	if err = row.Scan(&currency, &available); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			err = nil
@@ -47,7 +47,7 @@ func (d *BalanceDatabase) FetchUserBalance(ctx context.Context, userId string) (
 	// 2) GET RESERVATIONS
 	var reservedRow decimal.Decimal
 	var rows pgx.Rows
-	rows, err = tx.Query(ctx, `SELECT user_currency_value FROM balance_reserve WHERE user_id = $1`, userId)
+	rows, err = tx.Query(ctx, `SELECT user_currency_value FROM balance_reserve WHERE user_id = $1`, userID)
 	if err != nil {
 		return "", decimal.Zero, decimal.Zero, fmt.Errorf("read reservations: %w", err)
 	}

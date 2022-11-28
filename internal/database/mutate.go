@@ -12,8 +12,8 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-func (d *BalanceDatabase) TopUp(ctx context.Context, userId, currency, value, merchantData string) (snowflake.ID, error) {
-	if userId == "" {
+func (d *BalanceDatabase) TopUp(ctx context.Context, userID, currency, value, merchantData string) (snowflake.ID, error) {
+	if userID == "" {
 		return 0, proto.NewBadParameterError("user id")
 	}
 	if !IsCurrencyValid(currency) {
@@ -29,7 +29,7 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userId, currency, value, me
 
 	// 1) CREATE ZERO BALANCE IF NOT EXISTS
 	_, err = d.db.Exec(ctx, `INSERT INTO balance (user_id, currency, current_value) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-		userId, currency, 0,
+		userID, currency, 0,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("ensure balance: %w", err)
@@ -57,7 +57,7 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userId, currency, value, me
 	var balanceCurrency string
 	var balanceCurrentValue decimal.Decimal
 
-	row := tx.QueryRow(ctx, "SELECT currency, current_value FROM balance WHERE user_id = $1 FOR UPDATE", userId)
+	row := tx.QueryRow(ctx, "SELECT currency, current_value FROM balance WHERE user_id = $1 FOR UPDATE", userID)
 	if err = row.Scan(&balanceCurrency, &balanceCurrentValue); err != nil {
 		return 0, fmt.Errorf("lock balance: %w", err)
 	}
@@ -76,7 +76,7 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userId, currency, value, me
 	balanceNewValue := balanceCurrentValue.Add(topUpInUserCurrency)
 
 	// 4) CREATE TRANSACTION RECORD AND TOP-UP BALANCE
-	txId := utils.GenerateID()
+	txID := utils.GenerateID()
 	var merchantDataParam any
 	if merchantData != "" {
 		merchantDataParam = merchantData
@@ -85,18 +85,18 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userId, currency, value, me
 INSERT INTO transaction (id, transaction_currency, transaction_value, recipient_id, recipient_currency, recipient_value,
                          recipient_balance_before, recipient_balance_after, merchant_data)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		txId.Int64(), currency, topUpValue, userId, balanceCurrency, topUpInUserCurrency,
+		txID.Int64(), currency, topUpValue, userID, balanceCurrency, topUpInUserCurrency,
 		balanceCurrentValue, balanceNewValue, merchantDataParam,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("save user tx: %w", err)
 	}
 	_, err = tx.Exec(ctx, `UPDATE balance SET current_value = $2 WHERE user_id = $1`,
-		userId, balanceNewValue,
+		userID, balanceNewValue,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("update balance: %w", err)
 	}
 
-	return txId, nil
+	return txID, nil
 }

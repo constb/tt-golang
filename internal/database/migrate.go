@@ -10,11 +10,11 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-func RunMigrations(dbUrl string) error {
-	if strings.HasPrefix(dbUrl, "postgres://") {
-		dbUrl = "pgx://" + dbUrl[11:]
+func RunMigrations(dbURL string) error {
+	if strings.HasPrefix(dbURL, "postgres://") {
+		dbURL = "pgx://" + dbURL[11:]
 	}
-	m, err := migrate.New("file://migrations", dbUrl)
+	m, err := migrate.New("file://migrations", dbURL)
 	if err != nil {
 		return fmt.Errorf("load migrations: %w", err)
 	}

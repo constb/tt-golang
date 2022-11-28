@@ -53,7 +53,7 @@ func TestBalanceDatabase_FetchUserBalance(t *testing.T) {
 	})
 
 	type args struct {
-		userId string
+		userID string
 	}
 	tests := []struct {
 		name          string
@@ -72,13 +72,13 @@ func TestBalanceDatabase_FetchUserBalance(t *testing.T) {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			gotCurrency, gotAvailable, gotReserved, err := db.FetchUserBalance(context.TODO(), tt.args.userId)
-			if !tt.wantErr(t, err, fmt.Sprintf("FetchUserBalance(%v, %v)", "ctx", tt.args.userId)) {
+			gotCurrency, gotAvailable, gotReserved, err := db.FetchUserBalance(context.TODO(), tt.args.userID)
+			if !tt.wantErr(t, err, fmt.Sprintf("FetchUserBalance(%v, %v)", "ctx", tt.args.userID)) {
 				return
 			}
-			assert.Equalf(t, tt.wantCurrency, gotCurrency, "FetchUserBalance(%v, %v)", "ctx", tt.args.userId)
-			assert.Equalf(t, tt.wantAvailable.StringFixed(2), gotAvailable.StringFixed(2), "FetchUserBalance(%v, %v)", "ctx", tt.args.userId)
-			assert.Equalf(t, tt.wantReserved.StringFixed(2), gotReserved.StringFixed(2), "FetchUserBalance(%v, %v)", "ctx", tt.args.userId)
+			assert.Equalf(t, tt.wantCurrency, gotCurrency, "FetchUserBalance(%v, %v)", "ctx", tt.args.userID)
+			assert.Equalf(t, tt.wantAvailable.StringFixed(2), gotAvailable.StringFixed(2), "FetchUserBalance(%v, %v)", "ctx", tt.args.userID)
+			assert.Equalf(t, tt.wantReserved.StringFixed(2), gotReserved.StringFixed(2), "FetchUserBalance(%v, %v)", "ctx", tt.args.userID)
 		})
 	}
 }

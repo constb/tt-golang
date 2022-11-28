@@ -44,7 +44,7 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 	_, _ = db.db.Exec(context.TODO(), `DELETE FROM "balance"`)
 
 	type args struct {
-		userId       string
+		userID       string
 		currency     string
 		value        string
 		merchantData string
@@ -71,16 +71,16 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := db.TopUp(context.TODO(), tt.args.userId, tt.args.currency, tt.args.value, tt.args.merchantData)
-			if !tt.wantErr(t, err, fmt.Sprintf("TopUp(%v, %v, %v, %v, %v)", "ctx", tt.args.userId, tt.args.currency, tt.args.value, tt.args.merchantData)) {
+			got, err := db.TopUp(context.TODO(), tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)
+			if !tt.wantErr(t, err, fmt.Sprintf("TopUp(%v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)) {
 				return
 			}
 			if tt.wantID {
-				assert.NotEqualf(t, 0, got, "TopUp(%v, %v, %v, %v, %v)", "ctx", tt.args.userId, tt.args.currency, tt.args.value, tt.args.merchantData)
+				assert.NotEqualf(t, 0, got, "TopUp(%v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)
 
 				var gotCurrency string
 				var gotBalance decimal.Decimal
-				row := db.db.QueryRow(context.TODO(), `SELECT currency, current_value FROM balance WHERE user_id = $1`, tt.args.userId)
+				row := db.db.QueryRow(context.TODO(), `SELECT currency, current_value FROM balance WHERE user_id = $1`, tt.args.userID)
 				_ = row.Scan(&gotCurrency, &gotBalance)
 				assert.Equalf(t, tt.wantCurrency, gotCurrency, "currency %s/%s", tt.wantCurrency, gotCurrency)
 				assert.Truef(t, tt.wantBalance.Equal(gotBalance), "balance %s/%s", tt.wantBalance.String(), gotBalance.String())
@@ -89,7 +89,7 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 				var txValue decimal.Decimal
 				row = db.db.QueryRow(context.TODO(), `SELECT recipient_id, transaction_currency, transaction_value FROM "transaction" WHERE id = $1`, got.Int64())
 				_ = row.Scan(&txRecipient, &txCurrency, &txValue)
-				assert.Equalf(t, tt.args.userId, txRecipient, "transaction recipient")
+				assert.Equalf(t, tt.args.userID, txRecipient, "transaction recipient")
 				assert.Equalf(t, tt.args.currency, txCurrency, "transaction currency")
 				argValue, _ := decimal.NewFromString(tt.args.value)
 				assert.Equalf(t, argValue, txValue, "transaction value")

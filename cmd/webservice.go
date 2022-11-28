@@ -28,9 +28,9 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("top-up", service.TopUpHandler())
+	mux.Handle("/top-up", service.TopUpHandler())
 
-	server := &http.Server{Addr: ":" + port, Handler: mux}
+	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Panic("server serve", zap.Error(err))
@@ -74,8 +74,8 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 
 		// top-up balance
 		var output proto.GenericOutput
-		var txId snowflake.ID
-		txId, err = s.db.TopUp(r.Context(), input.UserId, input.Currency, input.Value, input.MerchantData)
+		var txID snowflake.ID
+		txID, err = s.db.TopUp(r.Context(), input.UserId, input.Currency, input.Value, input.MerchantData)
 		if err != nil {
 			protoErr, ok := err.(*proto.Error)
 			if ok {
@@ -83,11 +83,11 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 				output.Error = protoErr
 			} else {
 				logger.Error("top-up error", zap.Error(err))
-				w.WriteHeader(500)
+				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 		} else {
-			logger.Info("top-up new transaction", zap.Int64("txId", txId.Int64()))
+			logger.Info("top-up new transaction", zap.Int64("txID", txID.Int64()))
 
 			// return current balance data
 			output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
@@ -101,7 +101,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 					output.UserBalance = nil
 				} else {
 					logger.Error("fetch balance error", zap.Error(err))
-					w.WriteHeader(500)
+					w.WriteHeader(http.StatusInternalServerError)
 					return
 				}
 			} else {
@@ -113,7 +113,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.RequestId(handler)
+	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 

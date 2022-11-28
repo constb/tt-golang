@@ -23,6 +23,11 @@ const (
 	MediaTypeProtobuf = "application/protobuf"
 )
 
+var (
+	ErrContentTypeRequired = errors.New(`content-type header required`)
+	ErrMessageNoInterface  = errors.New("message doesn't implement protobuf interface")
+)
+
 func OnlyMethod(h http.Handler, allow string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == allow {
@@ -33,15 +38,15 @@ func OnlyMethod(h http.Handler, allow string) http.Handler {
 	})
 }
 
-func RequestId(h http.Handler) http.Handler {
+func RequestID(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		reqId := r.Header.Get(HeaderRequestId)
-		if reqId == "" {
-			reqId = GenerateID().Base32()
-			r.Header.Set(HeaderRequestId, reqId)
+		reqID := r.Header.Get(HeaderRequestId)
+		if reqID == "" {
+			reqID = GenerateID().Base32()
+			r.Header.Set(HeaderRequestId, reqID)
 		}
 
-		w.Header().Set(HeaderRequestId, reqId)
+		w.Header().Set(HeaderRequestId, reqID)
 
 		h.ServeHTTP(w, r)
 	})
@@ -54,7 +59,7 @@ func RequestLogger(r *http.Request, logger *zap.Logger) *zap.Logger {
 func UnmarshalInput(r *http.Request, message any) error {
 	ct := r.Header.Get(HeaderContentType)
 	if ct == "" {
-		return fmt.Errorf(`content-type header required`)
+		return ErrContentTypeRequired
 	}
 	mt, _, err := mime.ParseMediaType(ct)
 	if err != nil {
@@ -62,7 +67,7 @@ func UnmarshalInput(r *http.Request, message any) error {
 	}
 	protoMessage, ok := message.(proto.Message)
 	if !ok {
-		return errors.New("message doesn't implement protobuf interface")
+		return ErrMessageNoInterface
 	}
 
 	if mt == MediaTypeJson {
@@ -75,7 +80,6 @@ func UnmarshalInput(r *http.Request, message any) error {
 			return fmt.Errorf("unmarshal json: %w", err)
 		}
 	} else if mt == MediaTypeProtobuf {
-
 		defer r.Body.Close()
 		bytes, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -90,14 +94,14 @@ func UnmarshalInput(r *http.Request, message any) error {
 }
 
 func WriteOutput(r *http.Request, w http.ResponseWriter, logger *zap.Logger, message any) {
-	useJson := true
+	useJSON := true
 	mt, _, _ := mime.ParseMediaType(r.Header.Get(HeaderAccept))
 	if mt == MediaTypeProtobuf {
-		useJson = false
+		useJSON = false
 	} else if mt == "" {
 		mt, _, _ := mime.ParseMediaType(r.Header.Get(HeaderContentType))
 		if mt == MediaTypeProtobuf {
-			useJson = false
+			useJSON = false
 		}
 	}
 
@@ -105,11 +109,11 @@ func WriteOutput(r *http.Request, w http.ResponseWriter, logger *zap.Logger, mes
 	var bytes []byte
 	var err error
 	if !ok {
-		logger.Error("marshal protobuf", zap.Error(errors.New("message doesn't implement protobuf interface")))
-		w.WriteHeader(500)
+		logger.Error("marshal protobuf", zap.Error(ErrMessageNoInterface))
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	if useJson {
+	if useJSON {
 		bytes, err = protojson.Marshal(protoMessage)
 		if err != nil {
 			logger.Error("marshal json", zap.Error(err))
@@ -126,12 +130,12 @@ func WriteOutput(r *http.Request, w http.ResponseWriter, logger *zap.Logger, mes
 	}
 
 	if err != nil {
-		w.WriteHeader(500)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set(HeaderContentLength, strconv.Itoa(len(bytes)))
-	w.WriteHeader(200)
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(bytes)
 	if err != nil {
 		logger.Error("writing response", zap.Error(err))

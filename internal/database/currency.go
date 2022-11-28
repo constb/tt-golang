@@ -13,7 +13,7 @@ var baseCurrency string
 var rates map[string]decimal.Decimal
 
 func init() {
-	//loadRates()
+	// loadRates()
 	loadRatesFromStub()
 }
 

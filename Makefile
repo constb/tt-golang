@@ -20,12 +20,13 @@ dep:
 	go mod download
 
 vet:
-	go vet
+	go vet ./...
 
 lint:
 	golangci-lint run --enable-all \
 		-D maligned,exhaustivestruct,scopelint,interfacer,deadcode,golint,ifshort,nosnakecase,structcheck,varcheck \
 		-D rowserrcheck,sqlclosecheck,structcheck,wastedassign \
+		-D funlen,gochecknoinits,lll,nestif,wsl,exhaustruct,forcetypeassert,gochecknoglobals,nlreturn,paralleltest,testpackage,varnamelen,wrapcheck \
 		./...
 
 format:
