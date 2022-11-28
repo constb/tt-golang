@@ -71,7 +71,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		input := proto.TopUpInput{}
 		err := utils.UnmarshalInput(r, &input)
 		if err != nil {
-			logger.Error("bad input", zap.Error(err))
+			logger.Info("bad input", zap.Error(err))
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
