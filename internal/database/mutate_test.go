@@ -11,21 +11,21 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestBalanceDatabase_TopUp(t *testing.T) {
+func balanceDatabaseCleanup(t *testing.T) (*BalanceDatabase, bool) {
 	if os.Getenv("DB_URL") == "" {
 		t.Skipf("db tests require database")
-		return
+		return nil, false
 	}
 	if os.Getenv("ALLOW_ERASE_DATABASE_CONTENT") != "yes" {
 		t.Skipf("tests need to be allowed to erase database content")
-		return
+		return nil, false
 	}
 
 	for {
 		dir, _ := os.Getwd()
 		if len(dir) <= 1 {
 			t.Skipf("project root folder")
-			return
+			return nil, false
 		}
 		if strings.HasSuffix(dir, "tt-golang") {
 			break
@@ -42,6 +42,15 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 	_, _ = db.db.Exec(context.TODO(), `DELETE FROM "balance_reserve"`)
 	//goland:noinspection SqlWithoutWhere
 	_, _ = db.db.Exec(context.TODO(), `DELETE FROM "balance"`)
+
+	return db, true
+}
+
+func TestBalanceDatabase_TopUp(t *testing.T) {
+	db, ok := balanceDatabaseCleanup(t)
+	if !ok {
+		return
+	}
 
 	type args struct {
 		userID       string
@@ -93,6 +102,56 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 				assert.Equalf(t, tt.args.currency, txCurrency, "transaction currency")
 				argValue, _ := decimal.NewFromString(tt.args.value)
 				assert.Equalf(t, argValue, txValue, "transaction value")
+			}
+		})
+	}
+}
+
+func TestBalanceDatabase_Reserve(t *testing.T) {
+	db, ok := balanceDatabaseCleanup(t)
+	if !ok {
+		return
+	}
+
+	_, _ = db.TopUp(context.TODO(), "miguel", "EUR", "50.00", "")
+	_, _ = db.TopUp(context.TODO(), "orlando", "EUR", "200.00", "")
+
+	errNoMoneyError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
+		return assert.ErrorContainsf(t, err, "not enough money", "not a money error %v", err)
+	})
+
+	type args struct {
+		userID   string
+		currency string
+		value    string
+		orderID  string
+		itemID   string
+	}
+	tests := []struct {
+		name        string
+		args        args
+		wantErr     assert.ErrorAssertionFunc
+		wantReserve decimal.Decimal
+	}{
+		{"no user id", args{"", "EUR", "100.00", "order001", ""}, assert.Error, decimal.Zero},
+		{"no order id", args{"miguel", "EUR", "100.00", "", ""}, assert.Error, decimal.Zero},
+
+		{"success, same currency", args{"orlando", "EUR", "100.00", "order002", "item"}, assert.NoError, decimal.NewFromFloat(100)},
+		{"success, duplicate", args{"orlando", "EUR", "100.00", "order002", "item"}, assert.NoError, decimal.NewFromFloat(100)},
+		{"success, diff currency", args{"orlando", "USD", "50.00", "order003", "item"}, assert.NoError, decimal.NewFromFloat(151.23)},
+		{"fail, diff currency, no extra 6%", args{"orlando", "USD", "50.00", "order004", "item"}, errNoMoneyError, decimal.NewFromFloat(151.23)},
+		{"fail, no money", args{"miguel", "EUR", "100.00", "order005", "item"}, errNoMoneyError, decimal.Zero},
+
+		{"fail, no user", args{"sammy", "EUR", "100.00", "order006", ""}, errNoMoneyError, decimal.Zero},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := db.Reserve(context.TODO(), tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID)
+			tt.wantErr(t, err, fmt.Sprintf("Reserve(%v, %v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID))
+			if tt.args.userID != "" {
+				_, _, reserve, err := db.FetchUserBalance(context.TODO(), tt.args.userID)
+				assert.NoErrorf(t, err, "FetchUserBalance(%v)", tt.args.userID)
+				assert.Truef(t, reserve.Equal(tt.wantReserve), "reserve got: %v want: %v", reserve.String(), tt.wantReserve.String())
 			}
 		})
 	}

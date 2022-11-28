@@ -37,6 +37,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/top-up", service.TopUpHandler())
+	mux.Handle("/reserve", service.ReserveHandler())
 
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -68,6 +69,8 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := utils.RequestLogger(r, s.logger)
 
+		// TODO: add idempotency check
+
 		input := proto.TopUpInput{}
 		err := utils.UnmarshalInput(r, &input)
 		if err != nil {
@@ -94,6 +97,68 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		}
 
 		logger.Info("top-up new transaction", zap.Int64("txID", txID.Int64()))
+
+		// return current balance data
+		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
+		var available, reserved decimal.Decimal
+		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if !ok {
+				logger.Error("fetch balance error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			logger.Info("fetch balance failed", zap.Error(err))
+			output.Error = protoErr
+			output.UserBalance = nil
+		} else {
+			output.UserBalance.Value = available.StringFixedBank(2)
+			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
+			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
+		}
+		utils.WriteOutput(r, w, logger, &output)
+	})
+
+	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.RequestID(handler)
+	handler = utils.OnlyMethod(handler, http.MethodPost)
+	handler = http.TimeoutHandler(handler, 5*time.Second, "")
+
+	return handler
+}
+
+func (s *BalanceWebService) ReserveHandler() http.Handler {
+	var handler http.Handler
+
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := utils.RequestLogger(r, s.logger)
+
+		input := proto.ReserveInput{}
+		err := utils.UnmarshalInput(r, &input)
+		if err != nil {
+			logger.Info("bad input", zap.Error(err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		// add reservation
+		var output proto.GenericOutput
+		err = s.db.Reserve(r.Context(), input.UserId, input.Currency, input.Value, input.OrderId, input.ItemId)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if ok {
+				logger.Info("reservation failed", zap.Error(err))
+				output.Error = protoErr
+				utils.WriteOutput(r, w, logger, &output)
+			} else {
+				logger.Error("reservation error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+			return
+		}
+
+		logger.Info("new reservation", zap.String("orderID", input.OrderId), zap.String("userID", input.UserId))
 
 		// return current balance data
 		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
