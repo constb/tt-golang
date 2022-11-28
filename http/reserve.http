@@ -1,0 +1,17 @@
+### reserve, invalid input
+POST http://localhost:3000/reserve
+content-type: application/json
+
+{}
+
+### reserve, success
+POST http://localhost:3000/reserve
+content-type: application/json
+
+{
+  "userId": "mehmet",
+  "currency": "TRY",
+  "value": "20.00",
+  "orderId": "order5",
+  "itemId": "item"
+}
