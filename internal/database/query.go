@@ -37,7 +37,7 @@ func (d *BalanceDatabase) FetchUserBalance(ctx context.Context, userID string) (
 	row := tx.QueryRow(ctx, `SELECT currency, current_value FROM balance WHERE user_id = $1`, userID)
 	if err = row.Scan(&currency, &available); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			err = nil
+			err = proto.NewUserNotFoundError()
 		} else {
 			err = fmt.Errorf("read balance: %w", err)
 		}

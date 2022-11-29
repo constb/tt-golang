@@ -52,6 +52,10 @@ func TestBalanceDatabase_FetchUserBalance(t *testing.T) {
 		_, _ = db.db.Exec(context.TODO(), `DELETE FROM balance WHERE user_id IN ($1, $2, $3)`, "andy", "danny", "jenna")
 	})
 
+	errUserNotFoundError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
+		return assert.ErrorContainsf(t, err, "user not found", "not a user error %v", err)
+	})
+
 	type args struct {
 		userID string
 	}
@@ -66,7 +70,7 @@ func TestBalanceDatabase_FetchUserBalance(t *testing.T) {
 		{"nominal balance", args{"andy"}, "USD", decimal.NewFromInt(20), decimal.Zero, assert.NoError},
 		{"overdraft", args{"danny"}, "USD", decimal.NewFromInt(-1), decimal.NewFromInt(6), assert.NoError},
 		{"reserve", args{"jenna"}, "EUR", decimal.NewFromFloat(174.05), decimal.NewFromFloat(25.95), assert.NoError},
-		{"default", args{"manuela"}, "", decimal.Zero, decimal.Zero, assert.NoError},
+		{"default", args{"manuela"}, "", decimal.Zero, decimal.Zero, errUserNotFoundError},
 	}
 	for _, tt := range tests {
 		tt := tt

@@ -1,0 +1,8 @@
+### get for known user
+GET http://localhost:3000/balance/mehmet
+
+### get for unknown user
+GET http://localhost:3000/balance/olga
+
+### get without user
+GET http://localhost:3000/balance/

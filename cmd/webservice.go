@@ -36,6 +36,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
+	mux.Handle("/balance/", service.BalanceHandler())
 	mux.Handle("/top-up", service.TopUpHandler())
 	mux.Handle("/reserve", service.ReserveHandler())
 	mux.Handle("/commit", service.CommitHandler())
@@ -62,6 +63,46 @@ type BalanceWebService struct {
 
 func NewBalanceWebService(db *database.BalanceDatabase, logger *zap.Logger, apiKey string) (*BalanceWebService, error) {
 	return &BalanceWebService{logger, db, apiKey}, nil
+}
+
+func (s *BalanceWebService) BalanceHandler() http.Handler {
+	var handler http.Handler
+
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := utils.RequestLogger(r, s.logger)
+
+		userID := r.RequestURI[9:]
+
+		// return current balance data
+		var output proto.GenericOutput
+		var err error
+		output.UserBalance = &proto.UserBalanceData{UserId: userID}
+		var available, reserved decimal.Decimal
+		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), userID)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if !ok {
+				logger.Error("fetch balance error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			logger.Info("fetch balance failed", zap.Error(err))
+			output.Error = protoErr
+			output.UserBalance = nil
+		} else {
+			output.UserBalance.Value = available.StringFixedBank(2)
+			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
+			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
+		}
+		utils.WriteOutput(r, w, logger, &output)
+	})
+
+	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.RequestID(handler)
+	handler = utils.OnlyMethod(handler, http.MethodGet)
+	handler = http.TimeoutHandler(handler, 5*time.Second, "")
+
+	return handler
 }
 
 func (s *BalanceWebService) TopUpHandler() http.Handler {
