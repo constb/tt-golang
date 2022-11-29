@@ -77,17 +77,6 @@ func TestRequestId(t *testing.T) {
 	}
 }
 
-func TestRequestLogger(t *testing.T) {
-	t.Parallel()
-	logger := NewLogger("testing")
-	r := httptest.NewRequest(http.MethodPost, "/", nil)
-	r.Header.Set(HeaderRequestId, "kwa")
-
-	res := RequestLogger(r, logger)
-
-	assert.NotEmpty(t, res, "RequestLogger(r, logger)")
-}
-
 func TestUnmarshalInput(t *testing.T) {
 	t.Parallel()
 

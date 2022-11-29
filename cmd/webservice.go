@@ -73,7 +73,7 @@ func (s *BalanceWebService) BalanceHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.RequestLogger(r, s.logger)
+		logger := utils.GetRequestLogger(r)
 
 		userID := r.RequestURI[9:]
 
@@ -102,8 +102,9 @@ func (s *BalanceWebService) BalanceHandler() http.Handler {
 	})
 
 	handler = utils.ApiKey(handler, s.apiKey)
-	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodGet)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler
@@ -113,7 +114,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.RequestLogger(r, s.logger)
+		logger := utils.GetRequestLogger(r)
 
 		input := proto.TopUpInput{}
 		err := utils.UnmarshalInput(r, &input)
@@ -165,8 +166,9 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 	})
 
 	handler = utils.ApiKey(handler, s.apiKey)
-	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler
@@ -176,7 +178,7 @@ func (s *BalanceWebService) ReserveHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.RequestLogger(r, s.logger)
+		logger := utils.GetRequestLogger(r)
 
 		input := proto.ReserveInput{}
 		err := utils.UnmarshalInput(r, &input)
@@ -227,8 +229,9 @@ func (s *BalanceWebService) ReserveHandler() http.Handler {
 	})
 
 	handler = utils.ApiKey(handler, s.apiKey)
-	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler
@@ -238,7 +241,7 @@ func (s *BalanceWebService) CommitHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.RequestLogger(r, s.logger)
+		logger := utils.GetRequestLogger(r)
 
 		input := proto.CommitReservationInput{}
 		err := utils.UnmarshalInput(r, &input)
@@ -290,8 +293,9 @@ func (s *BalanceWebService) CommitHandler() http.Handler {
 	})
 
 	handler = utils.ApiKey(handler, s.apiKey)
-	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler
@@ -307,7 +311,7 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.RequestLogger(r, s.logger)
+		logger := utils.GetRequestLogger(r)
 
 		key := r.RequestURI[12:]
 		if len(key) != 7 || key[4] != '/' {
@@ -373,8 +377,9 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 	})
 
 	handler = utils.ApiKey(handler, s.apiKey)
-	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodGet)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler

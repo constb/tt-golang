@@ -1,14 +1,17 @@
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	"strconv"
+	"time"
 
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -67,8 +70,44 @@ func ApiKey(h http.Handler, key string) http.Handler {
 	})
 }
 
-func RequestLogger(r *http.Request, logger *zap.Logger) *zap.Logger {
-	return logger.With(zap.String("reqId", r.Header.Get(HeaderRequestId)))
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (w *loggingResponseWriter) WriteHeader(code int) {
+	w.statusCode = code
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func RequestLogger(h http.Handler, logger *zap.Logger) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		reqLogger := logger.With(zap.String("reqId", r.Header.Get(HeaderRequestId)))
+		reqLogger.Info("incoming request",
+			zap.Object("req", zapcore.ObjectMarshalerFunc(func(encoder zapcore.ObjectEncoder) error {
+				encoder.AddString("method", r.Method)
+				encoder.AddString("url", r.RequestURI)
+				encoder.AddString("remoteAddress", r.RemoteAddr)
+				return nil
+			})),
+		)
+		lw := &loggingResponseWriter{w, http.StatusOK}
+		h.ServeHTTP(lw, r.WithContext(context.WithValue(r.Context(), "Logger", reqLogger)))
+		reqLogger.Info("request completed", zap.Object("res", zapcore.ObjectMarshalerFunc(func(encoder zapcore.ObjectEncoder) error {
+			encoder.AddString("url", r.RequestURI)
+			encoder.AddInt("statusCode", lw.statusCode)
+			return nil
+		})), zap.Float64("responseTime", time.Since(start).Seconds()*1000.0))
+	})
+}
+
+func GetRequestLogger(r *http.Request) *zap.Logger {
+	l, ok := r.Context().Value("Logger").(*zap.Logger)
+	if !ok {
+		return logger
+	}
+	return l
 }
 
 func UnmarshalInput(r *http.Request, message any) error {
