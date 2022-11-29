@@ -17,6 +17,8 @@ func (m *Error) Error() string {
 		return "user not found"
 	case *Error_InvalidCurrency:
 		return fmt.Sprintf("invalid currency %s", e.InvalidCurrency.Currency)
+	case *Error_InvalidState:
+		return "order is in invalid state"
 	default:
 		return m.String()
 	}
@@ -40,4 +42,8 @@ func NewUserNotFoundError() *Error {
 
 func NewInvalidCurrencyError(currency string) *Error {
 	return &Error{OneError: &Error_InvalidCurrency{&InvalidCurrencyError{Currency: currency}}}
+}
+
+func NewInvalidStateError() *Error {
+	return &Error{OneError: &Error_InvalidState{&InvalidStateError{}}}
 }

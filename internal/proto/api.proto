@@ -69,11 +69,18 @@ message ListTransactionsOutput {
 
 message Error {
   oneof one_error {
+    // access denied
     UnauthorizedError unauthorized = 1;
+    // one of the parameters is not valid
     BadParameterError bad_parameter = 2;
+    // unknown user id (TODO: do I still need this?)
     UserNotFoundError user_not_found = 3;
+    // user funds is not enough for reserve/commit operation
     NotEnoughMoneyError not_enough_money = 4;
+    // currency is not valid/supported
     InvalidCurrencyError invalid_currency = 5;
+    // reserving funds for already processed order
+    InvalidStateError invalid_state = 6;
   }
 }
 
@@ -90,6 +97,8 @@ message NotEnoughMoneyError {}
 message InvalidCurrencyError {
   string currency = 1;
 }
+
+message InvalidStateError {}
 
 message UserBalanceData {
   string user_id = 1;

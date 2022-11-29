@@ -10,6 +10,7 @@ import (
 	"github.com/constb/tt-golang/internal/proto"
 	"github.com/constb/tt-golang/internal/utils"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/shopspring/decimal"
 )
 
@@ -180,7 +181,7 @@ func (d *BalanceDatabase) Reserve(ctx context.Context, userID, currency, value, 
 	}
 
 	// x) IDEMPOTENCY CHECK
-	var orderReserve int
+	var orderReserve, orderTx int
 	row = tx.QueryRow(ctx, "SELECT COUNT(*) FROM balance_reserve WHERE user_id = $1 AND order_id = $2", userID, orderID)
 	if err = row.Scan(&orderReserve); err != nil {
 		return fmt.Errorf("read reserve: %w", err)
@@ -189,6 +190,16 @@ func (d *BalanceDatabase) Reserve(ctx context.Context, userID, currency, value, 
 		// constb: pretend we have successfully processed this reservation
 		// do we need to check other parameters too? like item id? reserved value?
 		return nil
+	}
+	row = tx.QueryRow(ctx, "SELECT COUNT(*) FROM transaction WHERE order_data->>'order_id' = $1", orderID)
+	if err = row.Scan(&orderTx); err != nil {
+		return fmt.Errorf("read tx: %w", err)
+	}
+	if orderTx > 0 {
+		// constb: reserving money for already committed transaction? definitely an error!
+		// important: set err to Rollback transaction
+		err = proto.NewInvalidStateError()
+		return err
 	}
 
 	// 4) CONVERT CURRENCIES IF NEEDED
@@ -226,4 +237,119 @@ VALUES ($1, $2, $3, $4, $5, $6)`,
 	}
 
 	return nil
+}
+
+func (d *BalanceDatabase) CommitReservation(ctx context.Context, userID, currency, value, orderID, itemID string) (snowflake.ID, error) {
+	if userID == "" {
+		return 0, proto.NewBadParameterError("user id")
+	}
+	if !IsCurrencyValid(currency) {
+		return 0, proto.NewBadParameterError("currency")
+	}
+	commitValue, err := decimal.NewFromString(value)
+	if err != nil || commitValue.LessThanOrEqual(decimal.Zero) {
+		return 0, proto.NewBadParameterError("value")
+	}
+	if orderID == "" {
+		return 0, proto.NewBadParameterError("order id")
+	}
+
+	// 1) CREATE ZERO BALANCE IF NOT EXISTS
+	err = d.initUserBalance(ctx, userID, currency)
+	if err != nil {
+		return 0, err
+	}
+
+	// x) WRAP IN TRANSACTION
+	conn, err := d.db.Acquire(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		} else {
+			_ = tx.Commit(ctx)
+		}
+	}()
+
+	// 2) LOAD BALANCE AND LOCK FOR UPDATE
+	var balanceCurrency string
+	var balanceCurrentValue decimal.Decimal
+
+	row := tx.QueryRow(ctx, "SELECT currency, current_value FROM balance WHERE user_id = $1 FOR UPDATE", userID)
+	if err = row.Scan(&balanceCurrency, &balanceCurrentValue); err != nil {
+		return 0, fmt.Errorf("lock balance: %w", err)
+	}
+
+	// x) IDEMPOTENCY CHECK
+	var txID snowflake.ID
+	row = tx.QueryRow(ctx, "SELECT id FROM transaction WHERE order_data->>'order_id' = $1", orderID)
+	if err = row.Scan(&txID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("locate transaction: %w", err)
+	}
+	if txID > 0 {
+		// constb: pretend we have successfully committed this reservation
+		// do we need to check other parameters too? like user id? currency and value?
+		return txID, nil
+	}
+
+	// 3) DELETE RESERVATION IF WAS PREVIOUSLY MADE
+	var res pgconn.CommandTag
+	res, err = tx.Exec(ctx, `DELETE FROM balance_reserve WHERE order_id = $1`, orderID)
+	if err != nil {
+		return 0, fmt.Errorf("delete reservation: %w", err)
+	}
+	previouslyReserved := res.RowsAffected() > 0
+
+	// 4) CALCULATE ACTUAL TRANSACTION VALUE
+	var commitInUserCurrency decimal.Decimal
+	if currency == balanceCurrency {
+		commitInUserCurrency = commitValue
+	} else {
+		commitInUserCurrency, err = ConvertCurrency(commitValue, currency, balanceCurrency)
+		if err != nil {
+			return 0, fmt.Errorf("currency convert: %w", err)
+		}
+	}
+
+	balanceNewValue := balanceCurrentValue.Sub(commitInUserCurrency)
+
+	if balanceNewValue.LessThan(decimal.Zero) && (currency == balanceCurrency || !previouslyReserved) {
+		// constb only allow overdraft on reservations in different currency, otherwise generate error
+		// important: set err to Rollback transaction
+		err = proto.NewNotEnoughMoneyError()
+		return 0, err
+	}
+
+	// 5) CREATE TRANSACTION RECORD AND CHARGE FROM BALANCE
+	txID = utils.GenerateID()
+	var orderDataParam []byte
+	orderDataParam, err = json.Marshal(struct {
+		OrderId string `json:"order_id"`
+		ItemId  string `json:"item_id,omitempty"`
+	}{orderID, itemID})
+	_, err = tx.Exec(ctx, `
+INSERT INTO transaction (id, transaction_currency, transaction_value, sender_id, sender_currency, sender_value,
+                         sender_balance_before, sender_balance_after, order_data)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		txID.Int64(), currency, commitValue, userID, balanceCurrency, commitInUserCurrency,
+		balanceCurrentValue, balanceNewValue, orderDataParam,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("save user tx: %w", err)
+	}
+	_, err = tx.Exec(ctx, `UPDATE balance SET current_value = $2 WHERE user_id = $1`,
+		userID, balanceNewValue,
+	)
+	if err != nil {
+		return 0, fmt.Errorf("update balance: %w", err)
+	}
+
+	return txID, nil
 }

@@ -159,3 +159,110 @@ func TestBalanceDatabase_Reserve(t *testing.T) {
 		})
 	}
 }
+
+func TestBalanceDatabase_CommitReservation(t *testing.T) {
+	db, ok := balanceDatabaseCleanup(t)
+	if !ok {
+		return
+	}
+
+	_, _ = db.TopUp(context.TODO(), "reserve_Test_1", "miguel", "EUR", "50.00", "")
+	_, _ = db.TopUp(context.TODO(), "reserve_Test_2", "orlando", "EUR", "200.00", "")
+
+	errNoMoneyError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
+		return assert.ErrorContainsf(t, err, "not enough money", "not a money error %v", err)
+	})
+
+	type args struct {
+		userID   string
+		currency string
+		value    string
+		orderID  string
+		itemID   string
+	}
+	tests := []struct {
+		name        string
+		reserve     bool
+		args        args
+		wantErr     assert.ErrorAssertionFunc
+		wantBalance decimal.Decimal
+		wantReserve decimal.Decimal
+	}{
+		{"success, same currency, no reserve", false, args{"orlando", "EUR", "10.00", "order1", ""}, assert.NoError, decimal.NewFromInt(190), decimal.Zero},
+		{"success, duplicate, no reserve", false, args{"orlando", "EUR", "10.00", "order1", ""}, assert.NoError, decimal.NewFromInt(190), decimal.Zero},
+		{"success, same currency, with reserve", true, args{"orlando", "EUR", "10.00", "order2", ""}, assert.NoError, decimal.NewFromInt(180), decimal.Zero},
+		{"success, diff currency, no reserve", false, args{"orlando", "TRY", "50.00", "order3", ""}, assert.NoError, decimal.NewFromFloat(177.4), decimal.Zero},
+		{"success, diff currency, with reserve", true, args{"orlando", "TRY", "50.00", "order4", ""}, assert.NoError, decimal.NewFromFloat(174.8), decimal.Zero},
+
+		{"fail, not enough money", false, args{"miguel", "EUR", "100.00", "order5", ""}, errNoMoneyError, decimal.NewFromInt(50), decimal.Zero},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.reserve {
+				_, _, reserve, err := db.FetchUserBalance(context.TODO(), tt.args.userID)
+				assert.NoErrorf(t, err, "FetchUserBalance(%v)", tt.args.userID)
+				assert.Falsef(t, reserve.GreaterThan(decimal.Zero), "reserve got: %v want: %v", reserve.String(), "0")
+
+				err = db.Reserve(context.TODO(), tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID)
+				assert.NoErrorf(t, err, "Reserve(%v, %v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID)
+
+				_, _, reserve, err = db.FetchUserBalance(context.TODO(), tt.args.userID)
+				assert.NoErrorf(t, err, "FetchUserBalance(%v)", tt.args.userID)
+				assert.Truef(t, reserve.GreaterThan(decimal.Zero), "reserve got: %v want: %v", reserve.String(), "> 0")
+			}
+			_, err := db.CommitReservation(context.TODO(), tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID)
+			tt.wantErr(t, err, fmt.Sprintf("CommitReservation(%v, %v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.orderID, tt.args.itemID))
+			if tt.args.userID != "" {
+				_, available, reserve, err := db.FetchUserBalance(context.TODO(), tt.args.userID)
+				assert.NoErrorf(t, err, "FetchUserBalance(%v)", tt.args.userID)
+				assert.Truef(t, available.Equal(tt.wantBalance), "available got: %v want: %v", available.String(), tt.wantBalance.String())
+				assert.Truef(t, reserve.Equal(tt.wantReserve), "reserve got: %v want: %v", reserve.String(), tt.wantReserve.String())
+			}
+		})
+	}
+
+	t.Run("overdraft scenario", func(t *testing.T) {
+		loadRatesFromStub()
+		t.Cleanup(loadRatesFromStub)
+		userID := "miguel"
+		currency := "USD"
+		value := "50.00"
+		orderID := "orderX"
+		itemID := "item"
+		firstUsdRate := decimal.NewFromFloat(1.1)
+		firstReserve, _ := decimal.NewFromString(value)
+		firstReserve = firstReserve.Mul(decimal.NewFromFloat(1.06)).Div(firstUsdRate).RoundBank(2)
+		secondUsdRate := decimal.NewFromFloat(0.9)
+		secondCommit, _ := decimal.NewFromString(value)
+		secondCommit = secondCommit.Div(secondUsdRate).RoundBank(2)
+
+		// ensure no reserve
+		_, _, reserve, err := db.FetchUserBalance(context.TODO(), userID)
+		assert.NoErrorf(t, err, "FetchUserBalance(%v)", userID)
+		assert.Falsef(t, reserve.GreaterThan(decimal.Zero), "reserve got: %v want: %v", reserve.String(), "0")
+
+		// reserve with first currency rate + 6%
+		rates["USD"] = firstUsdRate
+
+		err = db.Reserve(context.TODO(), userID, currency, value, orderID, itemID)
+		assert.NoErrorf(t, err, "Reserve(%v, %v, %v, %v, %v, %v)", "ctx", userID, currency, value, orderID, itemID)
+
+		// ensure reserved
+		_, available, reserve, err := db.FetchUserBalance(context.TODO(), userID)
+		assert.NoErrorf(t, err, "FetchUserBalance(%v)", userID)
+		assert.Truef(t, available.Equal(decimal.NewFromInt(50).Sub(firstReserve)), "available got: %v want: %v", available.String(), decimal.NewFromInt(50).Sub(firstReserve).String())
+		assert.Truef(t, reserve.Equal(firstReserve), "reserve got: %v want: %v", reserve.String(), firstReserve.String())
+
+		// commit with second currency rate precisely, rate makes user go above balance, cause overdraft
+		rates["USD"] = secondUsdRate
+		txID, err := db.CommitReservation(context.TODO(), userID, currency, value, orderID, itemID)
+		assert.NoErrorf(t, err, "CommitReservation(%v, %v, %v, %v, %v, %v)", "ctx", userID, currency, value, orderID, itemID)
+		assert.Greaterf(t, txID.Int64(), int64(0), "txID %v > 0", txID)
+
+		// ensure overdraft is allowed, balance becomes negative
+		_, available, reserve, err = db.FetchUserBalance(context.TODO(), userID)
+		assert.NoErrorf(t, err, "FetchUserBalance(%v)", userID)
+		assert.Truef(t, available.Equal(decimal.NewFromInt(50).Sub(secondCommit)), "available got: %v want: %v", available.String(), decimal.NewFromInt(50).Sub(secondCommit).String())
+		assert.Truef(t, reserve.Equal(decimal.Zero), "reserve got: %v want: %v", reserve.String(), "0")
+	})
+}

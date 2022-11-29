@@ -1,0 +1,33 @@
+### commit in own currency
+POST http://localhost:3000/commit
+content-type: application/json
+
+{
+  "userId": "mehmet",
+  "currency": "TRY",
+  "value": "10.00",
+  "orderId": "ord1"
+}
+
+### commit in another currency
+POST http://localhost:3000/commit
+content-type: application/json
+
+{
+  "userId": "mehmet",
+  "currency": "USD",
+  "value": "1.00",
+  "orderId": "ord2"
+}
+
+### commit reserved, success
+POST http://localhost:3000/commit
+content-type: application/json
+
+{
+  "userId": "mehmet",
+  "currency": "TRY",
+  "value": "20.00",
+  "orderId": "order5",
+  "itemId": "item"
+}
