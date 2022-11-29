@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/bwmarrin/snowflake"
@@ -40,6 +43,7 @@ func main() {
 	mux.Handle("/top-up", service.TopUpHandler())
 	mux.Handle("/reserve", service.ReserveHandler())
 	mux.Handle("/commit", service.CommitHandler())
+	mux.Handle("/statistics/", service.StatisticsCsvHandler())
 
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
@@ -288,6 +292,89 @@ func (s *BalanceWebService) CommitHandler() http.Handler {
 	handler = utils.ApiKey(handler, s.apiKey)
 	handler = utils.RequestID(handler)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
+	handler = http.TimeoutHandler(handler, 5*time.Second, "")
+
+	return handler
+}
+
+const (
+	errStatisticsBadParameters     = "bad parameters, use YYYY-MM"
+	errStatisticsBadParameterYear  = `bad parameter "year", use YYYY-MM`
+	errStatisticsBadParameterMonth = `bad parameter "month", use YYYY-MM`
+)
+
+func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
+	var handler http.Handler
+
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := utils.RequestLogger(r, s.logger)
+
+		key := r.RequestURI[12:]
+		if len(key) != 7 || key[4] != '/' {
+			logger.Info(errStatisticsBadParameters, zap.String("key", key))
+			w.Header().Set(utils.HeaderContentType, "text/plain")
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(errStatisticsBadParameters))
+			return
+		}
+		year, err := strconv.Atoi(key[0:4])
+		if err != nil || year < 2022 || year > time.Now().Year() {
+			logger.Info(errStatisticsBadParameterYear, zap.String("key", key))
+			w.Header().Set(utils.HeaderContentType, "text/plain")
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(errStatisticsBadParameterYear))
+			return
+		}
+		month, err := strconv.Atoi(key[5:7])
+		if err != nil || month < 1 || month > 12 {
+			logger.Info(errStatisticsBadParameterMonth, zap.String("key", key))
+			w.Header().Set(utils.HeaderContentType, "text/plain")
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(errStatisticsBadParameterMonth))
+			return
+		}
+
+		var headerWritten bool
+		var resCurrencies []string
+		var resWriter *csv.Writer
+		s.db.FetchStatistics(r.Context(), year, month, database.StatisticsCallbacks{
+			OnCurrencies: func(currencies []string) {
+				w.Header().Set(utils.HeaderContentType, "application/csv")
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=item_statistics_%04d_%02d.csv", year, month))
+				w.WriteHeader(http.StatusOK)
+				resCurrencies = currencies
+				resWriter = csv.NewWriter(w)
+				_ = resWriter.Write(append([]string{"Item ID"}, resCurrencies...))
+				headerWritten = true
+			},
+			OnRecord: func(item string, values map[string]decimal.Decimal) {
+				record := make([]string, 0, len(resCurrencies)+1)
+				record = append(record, item)
+				for _, c := range resCurrencies {
+					record = append(record, values[c].StringFixedBank(2))
+				}
+				_ = resWriter.Write(record)
+			},
+			OnError: func(err error) {
+				if headerWritten {
+					record := make([]string, len(resCurrencies)+1)
+					record[0] = err.Error()
+					_ = resWriter.Write(record)
+				} else {
+					w.Header().Set(utils.HeaderContentType, "text/plain")
+					w.WriteHeader(http.StatusInternalServerError)
+					_, _ = w.Write([]byte(err.Error()))
+				}
+			},
+		})
+		if headerWritten {
+			resWriter.Flush()
+		}
+	})
+
+	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.RequestID(handler)
+	handler = utils.OnlyMethod(handler, http.MethodGet)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
 
 	return handler
