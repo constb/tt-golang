@@ -53,10 +53,11 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 	}
 
 	type args struct {
-		userID       string
-		currency     string
-		value        string
-		merchantData string
+		idempotencyKey string
+		userID         string
+		currency       string
+		value          string
+		merchantData   string
 	}
 	tests := []struct {
 		name         string
@@ -67,20 +68,22 @@ func TestBalanceDatabase_TopUp(t *testing.T) {
 		wantBalance  decimal.Decimal
 	}{
 		// validations
-		{"zero top-up", args{"kwa", "USD", "0.00", ""}, false, assert.Error, "", decimal.Zero},
-		{"invalid value", args{"kwa", "USD", "20.0.0", ""}, false, assert.Error, "", decimal.Zero},
-		{"bad user id", args{"", "USD", "20.00", `{"test":true}`}, false, assert.Error, "", decimal.Zero},
-		{"invalid currency", args{"kwa", "xxx", "20.00", ""}, false, assert.Error, "", decimal.Zero},
+		{"no idempotency key", args{"", "kwa", "USD", "0.00", ""}, false, assert.Error, "", decimal.Zero},
+		{"zero top-up", args{"id1", "kwa", "USD", "0.00", ""}, false, assert.Error, "", decimal.Zero},
+		{"invalid value", args{"id1", "kwa", "USD", "20.0.0", ""}, false, assert.Error, "", decimal.Zero},
+		{"bad user id", args{"id1", "", "USD", "20.00", `{"test":true}`}, false, assert.Error, "", decimal.Zero},
+		{"invalid currency", args{"id1", "kwa", "xxx", "20.00", ""}, false, assert.Error, "", decimal.Zero},
 		// actual top-up
-		{"good top-up", args{"kwa", "USD", "20.00", `{"test":true}`}, true, assert.NoError, "USD", decimal.NewFromInt(20)},
-		{"second top-up", args{"kwa", "USD", "30.00", ``}, true, assert.NoError, "USD", decimal.NewFromInt(50)},
-		{"another currency top-up", args{"kwa", "TRY", "500.00", ``}, true, assert.NoError, "USD", decimal.NewFromFloat(76.85)},
-		{"another user top-up", args{"meow", "TRY", "200.00", ``}, true, assert.NoError, "TRY", decimal.NewFromInt(200)},
+		{"good top-up", args{"id2", "kwa", "USD", "20.00", `{"test":true}`}, true, assert.NoError, "USD", decimal.NewFromInt(20)},
+		{"second top-up", args{"id3", "kwa", "USD", "30.00", ``}, true, assert.NoError, "USD", decimal.NewFromInt(50)},
+		{"another currency top-up", args{"id4", "kwa", "TRY", "500.00", ``}, true, assert.NoError, "USD", decimal.NewFromFloat(76.85)},
+		{"another user top-up", args{"id5", "meow", "TRY", "200.00", ``}, true, assert.NoError, "TRY", decimal.NewFromInt(200)},
+		{"duplicate top-up", args{"id5", "meow", "TRY", "200.00", ``}, true, assert.NoError, "TRY", decimal.NewFromInt(200)},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := db.TopUp(context.TODO(), tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)
+			got, err := db.TopUp(context.TODO(), tt.args.idempotencyKey, tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)
 			if !tt.wantErr(t, err, fmt.Sprintf("TopUp(%v, %v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.currency, tt.args.value, tt.args.merchantData)) {
 				return
 			}
@@ -113,8 +116,8 @@ func TestBalanceDatabase_Reserve(t *testing.T) {
 		return
 	}
 
-	_, _ = db.TopUp(context.TODO(), "miguel", "EUR", "50.00", "")
-	_, _ = db.TopUp(context.TODO(), "orlando", "EUR", "200.00", "")
+	_, _ = db.TopUp(context.TODO(), "reserve_Test_1", "miguel", "EUR", "50.00", "")
+	_, _ = db.TopUp(context.TODO(), "reserve_Test_2", "orlando", "EUR", "200.00", "")
 
 	errNoMoneyError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
 		return assert.ErrorContainsf(t, err, "not enough money", "not a money error %v", err)

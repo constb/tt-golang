@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/bwmarrin/snowflake"
@@ -22,7 +23,10 @@ func (d *BalanceDatabase) initUserBalance(ctx context.Context, userID string, cu
 	return nil
 }
 
-func (d *BalanceDatabase) TopUp(ctx context.Context, userID, currency, value, merchantData string) (snowflake.ID, error) {
+func (d *BalanceDatabase) TopUp(ctx context.Context, idempotencyKey, userID, currency, value, merchantData string) (snowflake.ID, error) {
+	if idempotencyKey == "" {
+		return 0, proto.NewBadParameterError("idempotency key")
+	}
 	if userID == "" {
 		return 0, proto.NewBadParameterError("user id")
 	}
@@ -70,6 +74,17 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userID, currency, value, me
 		return 0, fmt.Errorf("lock balance: %w", err)
 	}
 
+	// x) IDEMPOTENCY CHECK
+	var txID snowflake.ID
+	row = tx.QueryRow(ctx, `SELECT id FROM transaction WHERE idempotency_key = $1`, idempotencyKey)
+	if err = row.Scan(&txID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("idempotency check: %w", err)
+	}
+	if txID != 0 {
+		// constb: transaction already was processed earlier, continue as if we have applied it now
+		return txID, nil
+	}
+
 	// 3) CONVERT CURRENCIES IF NEEDED
 	var topUpInUserCurrency decimal.Decimal
 	if currency == balanceCurrency {
@@ -84,17 +99,17 @@ func (d *BalanceDatabase) TopUp(ctx context.Context, userID, currency, value, me
 	balanceNewValue := balanceCurrentValue.Add(topUpInUserCurrency)
 
 	// 4) CREATE TRANSACTION RECORD AND TOP-UP BALANCE
-	txID := utils.GenerateID()
+	txID = utils.GenerateID()
 	var merchantDataParam any
 	if merchantData != "" {
 		merchantDataParam = merchantData
 	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO transaction (id, transaction_currency, transaction_value, recipient_id, recipient_currency, recipient_value,
-                         recipient_balance_before, recipient_balance_after, merchant_data)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                         recipient_balance_before, recipient_balance_after, merchant_data, idempotency_key)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
 		txID.Int64(), currency, topUpValue, userID, balanceCurrency, topUpInUserCurrency,
-		balanceCurrentValue, balanceNewValue, merchantDataParam,
+		balanceCurrentValue, balanceNewValue, merchantDataParam, idempotencyKey,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("save user tx: %w", err)

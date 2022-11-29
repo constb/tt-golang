@@ -69,8 +69,6 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logger := utils.RequestLogger(r, s.logger)
 
-		// TODO: add idempotency check
-
 		input := proto.TopUpInput{}
 		err := utils.UnmarshalInput(r, &input)
 		if err != nil {
@@ -82,7 +80,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		// top-up balance
 		var output proto.GenericOutput
 		var txID snowflake.ID
-		txID, err = s.db.TopUp(r.Context(), input.UserId, input.Currency, input.Value, input.MerchantData)
+		txID, err = s.db.TopUp(r.Context(), input.IdempotencyKey, input.UserId, input.Currency, input.Value, input.MerchantData)
 		if err != nil {
 			protoErr, ok := err.(*proto.Error)
 			if ok {

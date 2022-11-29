@@ -15,6 +15,7 @@ message TopUpInput {
   string currency = 2;
   string value = 3; // number as string, "." as delimiter, only 2 digits after dot
   string merchant_data = 4; // free-form json stored alongside top-up transaction
+  string idempotency_key = 5;
 }
 
 message ReserveInput {
