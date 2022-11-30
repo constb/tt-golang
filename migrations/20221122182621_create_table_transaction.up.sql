@@ -32,8 +32,8 @@ create index transaction_order_data_item_id_index
     on transaction ((date_trunc('month', created_at)), (order_data ->> 'item_id'))
     where (order_data ->> 'item_id') is not null;
 
-create index transaction_sender_id_index
-    on transaction (sender_id);
+create index transaction_sender_id_created_at_index
+    on transaction (sender_id, created_at);
 
-create index transaction_recipient_id_index
-    on transaction (recipient_id);
+create index transaction_recipient_id_created_at_index
+    on transaction (recipient_id, created_at);

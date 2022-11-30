@@ -1,0 +1,35 @@
+### list transactions
+POST http://localhost:3000/list
+content-type: application/json
+
+{
+  "userId": "masal"
+}
+
+### list first transaction
+POST http://localhost:3000/list
+content-type: application/json
+
+{
+  "userId": "masal",
+  "limit": 1
+}
+
+### list next transaction
+POST http://localhost:3000/list
+content-type: application/json
+
+{
+  "cursor": "Tx2DxDyl4TcwInT6SC1VIEyNwHc3mS7NKoVc7C6tjtddV_PkVkmXUzZ9BBXX7u-okEHIYHpGs5I_UFbe_rcQ6AZUtdvjOVmlx7GLpzD_jUZv1jsi38XE9rilpi6tW93g8byvayadHYmBGdmGep8BCy2f5KifiFLGXaToy_3Rod5YhiNkANyWziFctlxL9yvS5OyKywYV9Nd7nDqDifk8YpQwk1RZRIsBdfd3qGb8nbBbzbNdj9lObK13ziQ",
+  "limit": 1
+}
+
+### list limit by date
+POST http://localhost:3000/list
+content-type: application/json
+
+{
+  "userId": "masal",
+  "minTs": "2022-11-30T00:00:00Z",
+  "maxTs": "2022-11-30T23:59:59Z"
+}

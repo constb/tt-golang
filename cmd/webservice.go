@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/constb/tt-golang/internal/utils"
 	"github.com/shopspring/decimal"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 func main() {
@@ -40,6 +42,7 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle("/balance/", service.BalanceHandler())
+	mux.Handle("/list", service.ListTransactionsHandler())
 	mux.Handle("/top-up", service.TopUpHandler())
 	mux.Handle("/reserve", service.ReserveHandler())
 	mux.Handle("/commit", service.CommitHandler())
@@ -104,6 +107,125 @@ func (s *BalanceWebService) BalanceHandler() http.Handler {
 
 	handler = utils.ApiKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodGet)
+	handler = utils.RequestLogger(handler, s.logger)
+	handler = utils.RequestID(handler)
+	handler = http.TimeoutHandler(handler, 5*time.Second, "")
+
+	return handler
+}
+
+type cursorForListTransactions struct {
+	UserID           string
+	MinTime, MaxTime time.Time
+	Before           snowflake.ID
+}
+
+func (s *BalanceWebService) ListTransactionsHandler() http.Handler {
+	var handler http.Handler
+	utils.RegisterCursorType(&cursorForListTransactions{})
+
+	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		logger := utils.GetRequestLogger(r)
+
+		input := proto.ListTransactionsInput{}
+		err := utils.UnmarshalInput(r, &input)
+		if err != nil {
+			logger.Info("bad input", zap.Error(err))
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		userID := input.UserId
+		limit := int(input.Limit)
+		if limit <= 0 {
+			limit = 20
+		}
+		limit = int(math.Min(math.Max(float64(limit), 1), 100))
+		var before snowflake.ID
+		var minTime, maxTime time.Time
+		if input.MinTs != nil {
+			minTime = time.Unix(input.MinTs.Seconds, int64(input.MinTs.Nanos))
+		}
+		if input.MaxTs != nil {
+			maxTime = time.Unix(input.MaxTs.Seconds, int64(input.MaxTs.Nanos))
+		}
+		if input.Cursor != "" {
+			cursor := utils.UnmarshalCursor(input.Cursor)
+			if cursor == nil {
+				utils.WriteOutput(r, w, logger, &proto.ListTransactionsOutput{Error: proto.NewBadParameterError("cursor")})
+				return
+			}
+			cursorValue, ok := cursor.(*cursorForListTransactions)
+			if !ok {
+				utils.WriteOutput(r, w, logger, &proto.ListTransactionsOutput{Error: proto.NewBadParameterError("cursor")})
+				return
+			}
+			userID, before, minTime, maxTime = cursorValue.UserID, cursorValue.Before, cursorValue.MinTime, cursorValue.MaxTime
+		}
+
+		var output proto.ListTransactionsOutput
+
+		// return current balance data
+		output.UserBalance = &proto.UserBalanceData{UserId: userID}
+		var available, reserved decimal.Decimal
+		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), userID)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if !ok {
+				logger.Error("fetch balance error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			logger.Info("fetch balance failed", zap.Error(err))
+			output.Error = protoErr
+			output.UserBalance = nil
+		} else {
+			output.UserBalance.Value = available.StringFixedBank(2)
+			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
+			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
+		}
+
+		// return list of transactions
+		items, nextBefore, total, err := s.db.FetchUserTransactions(r.Context(), userID, limit, before, minTime, maxTime)
+		if err != nil {
+			protoErr, ok := err.(*proto.Error)
+			if !ok {
+				logger.Error("fetch user tx error", zap.Error(err))
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			logger.Info("fetch user tx failed", zap.Error(err))
+			output.Error = protoErr
+			output.UserBalance = nil
+			utils.WriteOutput(r, w, logger, &output)
+			return
+		}
+		for _, item := range items {
+			output.Transactions = append(output.Transactions, &proto.UserTransaction{
+				Currency:           item.Currency,
+				Value:              item.Value.StringFixedBank(2),
+				UserCurrencyValue:  item.UserCurrencyValue.StringFixed(2),
+				IsTopUpTransaction: item.IsTopUpTransaction,
+				OrderId:            item.OrderId,
+				ItemId:             item.ItemId,
+				CreatedAt:          &timestamppb.Timestamp{Seconds: item.CreatedAt.Unix()},
+			})
+		}
+		if nextBefore != 0 {
+			output.NextCursor = utils.MarshalCursor(&cursorForListTransactions{
+				UserID:  userID,
+				MinTime: minTime,
+				MaxTime: maxTime,
+				Before:  nextBefore,
+			})
+		}
+		output.Total = total
+
+		utils.WriteOutput(r, w, logger, &output)
+	})
+
+	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")

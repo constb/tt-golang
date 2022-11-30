@@ -46,9 +46,11 @@ message GetStatisticsInput {
 }
 
 message ListTransactionsInput {
-  string user_id = 1;
-  int32 limit = 2; // от 1 до 100, только в первом запросе (потом берётся из курсора)
-  string after = 3; // cursor, в первом запросе пустой, потом – курсор из предыдущего ответа
+  string user_id = 1; // только в первом запросе (потом берётся из курсора)
+  int32 limit = 2; // от 1 до 100
+  string cursor = 3; // cursor, в первом запросе пустой, потом – курсор из предыдущего ответа
+  google.protobuf.Timestamp min_ts = 4;
+  google.protobuf.Timestamp max_ts = 5;
 }
 
 message GenericOutput {
@@ -64,7 +66,9 @@ message StatisticsOutput {
 message ListTransactionsOutput {
   Error error = 1;
   UserBalanceData user_balance = 2;
-  repeated UserTransaction transaction = 3;
+  repeated UserTransaction transactions = 3;
+  string next_cursor = 4;
+  int64 total = 5;
 }
 
 message Error {
