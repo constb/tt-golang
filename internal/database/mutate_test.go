@@ -266,3 +266,53 @@ func TestBalanceDatabase_CommitReservation(t *testing.T) {
 		assert.Truef(t, reserve.Equal(decimal.Zero), "reserve got: %v want: %v", reserve.String(), "0")
 	})
 }
+
+func TestBalanceDatabase_CancelReservation(t *testing.T) {
+	db, ok := balanceDatabaseCleanup(t)
+	if !ok {
+		return
+	}
+
+	_, _ = db.TopUp(context.TODO(), "cancel_Test_1", "masal", "TRY", "50.00", "")
+	_, _ = db.CommitReservation(context.TODO(), "masal", "TRY", "13.00", "order1", "item")
+	_ = db.Reserve(context.TODO(), "masal", "TRY", "20.00", "order2", "item")
+	_ = db.Reserve(context.TODO(), "masal", "TRY", "17.00", "order3", "item")
+
+	errUserNotFoundError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
+		return assert.ErrorContainsf(t, err, "user not found", "not a user error %v", err)
+	})
+	errInvalidStateError := assert.ErrorAssertionFunc(func(t assert.TestingT, err error, i ...interface{}) bool {
+		return assert.ErrorContainsf(t, err, "invalid state", "not an invalid state error %v", err)
+	})
+
+	type args struct {
+		userID  string
+		orderID string
+		itemID  string
+	}
+	tests := []struct {
+		name          string
+		args          args
+		wantErr       assert.ErrorAssertionFunc
+		checkBalance  bool
+		wantAvailable decimal.Decimal
+		wantReserve   decimal.Decimal
+	}{
+		{"fail, unknown user", args{"unver", "order", ""}, errUserNotFoundError, false, decimal.Zero, decimal.Zero},
+		{"fail, already committed", args{"masal", "order1", ""}, errInvalidStateError, false, decimal.Zero, decimal.Zero},
+		{"success cancel", args{"masal", "order2", ""}, assert.NoError, true, decimal.NewFromInt(20), decimal.NewFromInt(17)},
+		{"success cancel duplicate", args{"masal", "order2", ""}, assert.NoError, true, decimal.NewFromInt(20), decimal.NewFromInt(17)},
+		{"success cancel more", args{"masal", "order3", ""}, assert.NoError, true, decimal.NewFromInt(37), decimal.NewFromInt(0)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.wantErr(t, db.CancelReservation(context.TODO(), tt.args.userID, tt.args.orderID, tt.args.itemID), fmt.Sprintf("CancelReservation(%v, %v, %v, %v)", "ctx", tt.args.userID, tt.args.orderID, tt.args.itemID))
+			if tt.checkBalance {
+				_, available, reserve, err := db.FetchUserBalance(context.TODO(), tt.args.userID)
+				assert.NoErrorf(t, err, "FetchUserBalance(%v)", tt.args.userID)
+				assert.Truef(t, available.Equal(tt.wantAvailable), "available got: %v want: %v", available.String(), tt.wantAvailable.String())
+				assert.Truef(t, reserve.Equal(tt.wantReserve), "reserve got: %v want: %v", reserve.String(), tt.wantReserve.String())
+			}
+		})
+	}
+}

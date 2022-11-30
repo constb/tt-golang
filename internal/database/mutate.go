@@ -353,3 +353,81 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
 
 	return txID, nil
 }
+
+func (d *BalanceDatabase) CancelReservation(ctx context.Context, userID, orderID, itemID string) error {
+	if userID == "" {
+		return proto.NewBadParameterError("user id")
+	}
+	if orderID == "" {
+		return proto.NewBadParameterError("order id")
+	}
+
+	// x) WRAP IN TRANSACTION
+	conn, err := d.db.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire connection: %w", err)
+	}
+	defer conn.Release()
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		} else {
+			_ = tx.Commit(ctx)
+		}
+	}()
+
+	// 1) LOAD BALANCE AND LOCK FOR UPDATE
+	var balanceCurrency string
+	var balanceCurrentValue decimal.Decimal
+
+	row := tx.QueryRow(ctx, "SELECT currency, current_value FROM balance WHERE user_id = $1 FOR UPDATE", userID)
+	if err = row.Scan(&balanceCurrency, &balanceCurrentValue); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// must set err to trigger Rollback
+			err = proto.NewUserNotFoundError()
+			return err
+		}
+		return fmt.Errorf("lock balance: %w", err)
+	}
+
+	// 2) FIND RESERVATION
+	var reservationUserID string
+
+	row = tx.QueryRow(ctx, "SELECT user_id FROM balance_reserve WHERE order_id = $1", orderID)
+	if err = row.Scan(&reservationUserID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// no reservation
+			var orderTxCount int
+			row = tx.QueryRow(ctx, "SELECT COUNT(*) FROM transaction WHERE (order_data->>'order_id') = $1", orderID)
+			if err = row.Scan(&orderTxCount); err != nil {
+				return fmt.Errorf("locate order tx: %w", err)
+			}
+			// constb: if we don't have a transaction for this order – cancel call is duplicate
+			// pretend we have cancelled just now
+			if orderTxCount == 0 {
+				return nil
+			}
+			// …otherwise this order is already committed. must set err to trigger Rollback
+			err = proto.NewInvalidStateError()
+			return err
+		}
+		return fmt.Errorf("locate reservation: %w", err)
+	}
+	if reservationUserID != userID {
+		// must set err to trigger Rollback
+		err = proto.NewBadParameterError("user id")
+		return err
+	}
+
+	// 3) REMOVE RESERVATION
+	_, err = tx.Exec(ctx, "DELETE FROM balance_reserve WHERE order_id = $1", orderID)
+	if err != nil {
+		return fmt.Errorf("remove reservation: %w", err)
+	}
+
+	return nil
+}
