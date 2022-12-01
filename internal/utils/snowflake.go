@@ -8,8 +8,10 @@ import (
 
 const snowflakeEpoch = 1669205840566
 
-var nodeId = rand.Int63n(1024)
-var node *snowflake.Node
+var (
+	nodeId = rand.Int63n(1024)
+	node   *snowflake.Node
+)
 
 func init() {
 	snowflake.Epoch = snowflakeEpoch

@@ -108,7 +108,7 @@ func (s *BalanceWebService) BalanceHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodGet)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -209,8 +209,8 @@ func (s *BalanceWebService) ListTransactionsHandler() http.Handler {
 				Value:              item.Value.StringFixedBank(2),
 				UserCurrencyValue:  item.UserCurrencyValue.StringFixed(2),
 				IsTopUpTransaction: item.IsTopUpTransaction,
-				OrderId:            item.OrderId,
-				ItemId:             item.ItemId,
+				OrderId:            item.OrderID,
+				ItemId:             item.ItemID,
 				CreatedAt:          &timestamppb.Timestamp{Seconds: item.CreatedAt.Unix()},
 			})
 		}
@@ -227,7 +227,7 @@ func (s *BalanceWebService) ListTransactionsHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -291,7 +291,7 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -354,7 +354,7 @@ func (s *BalanceWebService) ReserveHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -418,7 +418,7 @@ func (s *BalanceWebService) CommitHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -481,7 +481,7 @@ func (s *BalanceWebService) CancelHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodPost)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
@@ -506,7 +506,7 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 		if len(key) != 7 || key[4] != '/' {
 			logger.Info(errStatisticsBadParameters, zap.String("key", key))
 			w.Header().Set(utils.HeaderContentType, "text/plain")
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(errStatisticsBadParameters))
 			return
 		}
@@ -514,7 +514,7 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 		if err != nil || year < 2022 || year > time.Now().Year() {
 			logger.Info(errStatisticsBadParameterYear, zap.String("key", key))
 			w.Header().Set(utils.HeaderContentType, "text/plain")
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(errStatisticsBadParameterYear))
 			return
 		}
@@ -522,7 +522,7 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 		if err != nil || month < 1 || month > 12 {
 			logger.Info(errStatisticsBadParameterMonth, zap.String("key", key))
 			w.Header().Set(utils.HeaderContentType, "text/plain")
-			w.WriteHeader(404)
+			w.WriteHeader(http.StatusBadRequest)
 			_, _ = w.Write([]byte(errStatisticsBadParameterMonth))
 			return
 		}
@@ -565,7 +565,7 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 		}
 	})
 
-	handler = utils.ApiKey(handler, s.apiKey)
+	handler = utils.APIKey(handler, s.apiKey)
 	handler = utils.OnlyMethod(handler, http.MethodGet)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)

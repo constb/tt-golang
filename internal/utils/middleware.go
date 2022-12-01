@@ -56,7 +56,7 @@ func RequestID(h http.Handler) http.Handler {
 	})
 }
 
-func ApiKey(h http.Handler, key string) http.Handler {
+func APIKey(h http.Handler, key string) http.Handler {
 	if key == "" {
 		return h
 	}

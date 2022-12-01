@@ -9,8 +9,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-var baseCurrency string
-var rates map[string]decimal.Decimal
+var (
+	baseCurrency string
+	rates        map[string]decimal.Decimal
+)
 
 func init() {
 	// loadRates()

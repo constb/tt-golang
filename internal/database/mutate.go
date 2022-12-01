@@ -331,8 +331,8 @@ func (d *BalanceDatabase) CommitReservation(ctx context.Context, userID, currenc
 	txID = utils.GenerateID()
 	var orderDataParam []byte
 	orderDataParam, err = json.Marshal(struct {
-		OrderId string `json:"order_id"`
-		ItemId  string `json:"item_id,omitempty"`
+		OrderID string `json:"order_id"`
+		ItemID  string `json:"item_id,omitempty"`
 	}{orderID, itemID})
 	_, err = tx.Exec(ctx, `
 INSERT INTO transaction (id, transaction_currency, transaction_value, sender_id, sender_currency, sender_value,

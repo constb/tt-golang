@@ -75,8 +75,8 @@ type UserTransactionItem struct {
 	Value              decimal.Decimal
 	UserCurrencyValue  decimal.Decimal
 	IsTopUpTransaction bool
-	OrderId            string
-	ItemId             string
+	OrderID            string
+	ItemID             string
 	CreatedAt          time.Time
 }
 
@@ -150,10 +150,10 @@ LIMIT $8`,
 			next.IsTopUpTransaction = true
 		}
 		if orderID != nil {
-			next.OrderId = *orderID
+			next.OrderID = *orderID
 		}
 		if itemID != nil {
-			next.ItemId = *itemID
+			next.ItemID = *itemID
 		}
 		if len(items) < limit {
 			items = append(items, next)
