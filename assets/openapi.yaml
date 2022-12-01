@@ -1,0 +1,402 @@
+openapi: "3.0.0"
+info:
+  title: User Balances Service
+  description: |-
+    This microservice only keeps user balances and transactions. No checking of user ids, order ids or item ids
+    is made – this is the responsibility of a caller. You may use protobuf instead of json by specifying headers:
+    `Content-Type` for request data and `Accepts` for response. If `Accepts` is missing, response serialization type is
+    the same as request.
+    
+    If single currency is used, user balance never goes below zero. When doing multiple currencies we reserve extra 6%
+    to compensate for rate changes, but if currency rate changes too much, it is possible for overdraft to appear when
+    committing reservation.
+    
+    When access control is required set `API_KEY` environment variable and use `X-Api-Key` http header.
+  contact:
+    name: Constantin Bryzgalin
+    email: constb.rus@gmail.com
+    url: https://www.linkedin.com/in/constb/
+  version: "1.0"
+servers:
+  - url: "/"
+    description: Local instance
+tags:
+  - name: 'user'
+  - name: 'admin'
+
+paths:
+  /balance/{userId}:
+    get:
+      summary: 'get user balance state'
+      tags:
+        - user
+      operationId: Balance
+      parameters:
+        - name: userId
+          in: path
+          description: 'user identifier'
+          required: true
+          schema:
+            type: 'string'
+      responses:
+        200:
+          description: 'user balance state or an error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericOutput'
+  /list:
+    post:
+      summary: "list user's transactions"
+      tags:
+        - user
+      operationId: ListTransactions
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListTransactionsInput'
+      responses:
+        200:
+          description: "list of user's transactions or an error"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListTransactionsOutput'
+  /topup:
+    post:
+      summary: 'add funds to the balance'
+      description: |-
+        Use `idempotencyKey` to specify identifier that is unique to this top-up transaction. In case if operation is
+        processed but there was an error delivering success response, retrying the operation will yield successful
+        response but the operation itself won't be repeated.
+      tags:
+        - user
+      operationId: TopUp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TopUpInput'
+      responses:
+        200:
+          description: 'user balance state or an error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericOutput'
+  /reserve:
+    post:
+      summary: 'reserve funds for an order'
+      tags:
+        - user
+      operationId: Reserve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveInput'
+      responses:
+        200:
+          description: 'user balance state or an error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericOutput'
+  /commit:
+    post:
+      summary: 'charge user for an order'
+      tags:
+        - user
+      operationId: Commit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommitReservationInput'
+      responses:
+        200:
+          description: 'user balance state or an error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericOutput'
+  /cancel:
+    post:
+      summary: 'cancel order reservation, return funds'
+      tags:
+        - user
+      operationId: Cancel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelReservationInput'
+      responses:
+        200:
+          description: 'user balance state or an error'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericOutput'
+  /statistics/{year}/{month}:
+    get:
+      summary: 'get csv monthly statistics'
+      tags:
+        - admin
+      operationId: StatisticsCsv
+      parameters:
+        - name: year
+          in: path
+          schema:
+            type: 'integer'
+        - name: month
+          in: path
+          schema:
+            type: 'integer'
+      responses:
+        200:
+          description: 'downloadable statistics in csv format'
+          content:
+            application/csv: {}
+components:
+  schemas:
+
+    GetBalanceInput:
+      type: 'object'
+      required:
+        - userId
+      properties:
+        userId:
+          type: string
+
+    TopUpInput:
+      type: 'object'
+      required:
+        - userId
+        - currency
+        - value
+        - idempotencyKey
+      properties:
+        userId:
+          type: 'string'
+        currency:
+          type: 'string'
+        value:
+          type: 'string'
+        idempotencyKey:
+          type: 'string'
+        merchantData:
+          type: 'string'
+
+    ReserveInput:
+      type: 'object'
+      required:
+        - userId
+        - currency
+        - value
+        - orderId
+      properties:
+        userId:
+          type: 'string'
+        currency:
+          type: 'string'
+        value:
+          type: 'string'
+        orderId:
+          type: 'string'
+        itemId:
+          type: 'string'
+
+    CancelReservationInput:
+      type: 'object'
+      required:
+        - userId
+        - orderId
+      properties:
+        userId:
+          type: 'string'
+        orderId:
+          type: 'string'
+        itemId:
+          type: 'string'
+
+    CommitReservationInput:
+      type: 'object'
+      required:
+        - userId
+        - currency
+        - value
+        - orderId
+      properties:
+        userId:
+          type: 'string'
+        currency:
+          type: 'string'
+        value:
+          type: 'string'
+        orderId:
+          type: 'string'
+        itemId:
+          type: 'string'
+
+    GetStatisticsInput:
+      type: 'object'
+      required:
+        - year
+        - month
+      properties:
+        year:
+          type: 'integer'
+        month:
+          type: 'integer'
+
+    ListTransactionsInput:
+      type: 'object'
+      properties:
+        userId:
+          type: 'string'
+        limit:
+          type: 'integer'
+          minimum: 1
+          maximum: 100
+        cursor:
+          type: 'string'
+        minTs:
+          type: 'string'
+          format: 'date-time'
+        maxTs:
+          type: 'string'
+          format: 'date-time'
+
+    GenericOutput:
+      type: 'object'
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        userBalance:
+          $ref: '#/components/schemas/UserBalanceData'
+
+    StatisticsOutput:
+      type: 'object'
+      properties:
+        error:
+          $ref: '#/components/schemas/Error'
+        data:
+          type: 'object'
+          properties: {}
+          additionalProperties: {}
+
+    ListTransactionsOutput:
+      allOf:
+        - $ref: '#/components/schemas/GenericOutput'
+        - type: 'object'
+          required:
+            - transactions
+            - total
+          properties:
+            transactions:
+              type: 'array'
+              items:
+                type: 'object'
+                required:
+                  - currency
+                  - value
+                  - userCurrencyValue
+                  - orderId
+                  - createdAt
+                properties:
+                  currency:
+                    type: 'string'
+                  value:
+                    type: 'string'
+                  userCurrencyValue:
+                    type: 'string'
+                  isTopUpTransaction:
+                    type: 'boolean'
+                  orderId:
+                    type: 'string'
+                  itemId:
+                    type: 'string'
+                  createdAt:
+                    type: 'string'
+                    format: 'date-time'
+            nextCursor:
+              type: 'string'
+            total:
+              type: 'integer'
+
+    UserBalanceData:
+      type: 'object'
+      required:
+        - userId
+        - currency
+        - value
+        - reservedValue
+      properties:
+        userId:
+          type: 'string'
+        currency:
+          type: 'string'
+        value:
+          type: 'string'
+        reservedValue:
+          type: 'string'
+        isOverdraft:
+          type: 'boolean'
+
+    Error:
+      allOf:
+        - $ref: '#/components/schemas/UnauthorizedError'
+        - $ref: '#/components/schemas/BadParameterError'
+        - $ref: '#/components/schemas/UserNotFoundError'
+        - $ref: '#/components/schemas/NotEnoughMoneyError'
+        - $ref: '#/components/schemas/InvalidCurrencyError'
+        - $ref: '#/components/schemas/InvalidStateError'
+
+    UnauthorizedError:
+      type: 'object'
+      properties:
+        unauthorized:
+          type: 'object'
+          properties: {}
+    BadParameterError:
+      type: 'object'
+      properties:
+        badParameter:
+          type: 'object'
+          properties:
+            name:
+              type: 'string'
+    UserNotFoundError:
+      type: 'object'
+      properties:
+        userNotFound:
+          type: 'object'
+          properties: {}
+    NotEnoughMoneyError:
+      type: 'object'
+      properties:
+        notEnoughMoney:
+          type: 'object'
+          properties: {}
+    InvalidCurrencyError:
+      type: 'object'
+      properties:
+        invalidCurrency:
+          type: 'object'
+          properties:
+            currency:
+              type: 'string'
+    InvalidStateError:
+      type: 'object'
+      properties:
+        invalidState:
+          type: 'object'
+          properties: {}
+

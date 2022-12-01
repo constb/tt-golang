@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/bwmarrin/snowflake"
+	"github.com/constb/tt-golang/assets"
 	"github.com/constb/tt-golang/internal/database"
 	"github.com/constb/tt-golang/internal/proto"
 	"github.com/constb/tt-golang/internal/utils"
@@ -48,6 +49,8 @@ func main() {
 	mux.Handle("/commit", service.CommitHandler())
 	mux.Handle("/cancel", service.CancelHandler())
 	mux.Handle("/statistics/", service.StatisticsCsvHandler())
+	mux.Handle("/swagger/", http.StripPrefix("/swagger/", http.FileServer(assets.SwaggerUI())))
+	mux.Handle("/openapi.yaml", http.FileServer(http.FS(assets.OpenapiYML)))
 
 	server := &http.Server{Addr: ":" + port, Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
