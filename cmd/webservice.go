@@ -80,41 +80,11 @@ func (s *BalanceWebService) BalanceHandler() http.Handler {
 	var handler http.Handler
 
 	handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger := utils.GetRequestLogger(r)
-
 		userID := r.RequestURI[9:]
-
-		// return current balance data
-		var output proto.GenericOutput
-		var err error
-		output.UserBalance = &proto.UserBalanceData{UserId: userID}
-		var available, reserved decimal.Decimal
-		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), userID)
-		if err != nil {
-			protoErr, ok := err.(*proto.Error)
-			if !ok {
-				logger.Error("fetch balance error", zap.Error(err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			logger.Info("fetch balance failed", zap.Error(err))
-			output.Error = protoErr
-			output.UserBalance = nil
-		} else {
-			output.UserBalance.Value = available.StringFixedBank(2)
-			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-		}
-		utils.WriteOutput(r, w, logger, &output)
+		s.sendGenericOutputCurrentUserBalanceData(w, r, userID)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodGet)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodGet)
 }
 
 type cursorForListTransactions struct {
@@ -227,13 +197,7 @@ func (s *BalanceWebService) ListTransactionsHandler() http.Handler {
 		utils.WriteOutput(r, w, logger, &output)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodPost)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodPost)
 }
 
 func (s *BalanceWebService) TopUpHandler() http.Handler {
@@ -269,35 +233,10 @@ func (s *BalanceWebService) TopUpHandler() http.Handler {
 
 		logger.Info("new transaction (top-up)", zap.Int64("txID", txID.Int64()))
 
-		// return current balance data
-		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
-		var available, reserved decimal.Decimal
-		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
-		if err != nil {
-			protoErr, ok := err.(*proto.Error)
-			if !ok {
-				logger.Error("fetch balance error", zap.Error(err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			logger.Info("fetch balance failed", zap.Error(err))
-			output.Error = protoErr
-			output.UserBalance = nil
-		} else {
-			output.UserBalance.Value = available.StringFixedBank(2)
-			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-		}
-		utils.WriteOutput(r, w, logger, &output)
+		s.sendGenericOutputCurrentUserBalanceData(w, r, input.UserId)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodPost)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodPost)
 }
 
 func (s *BalanceWebService) ReserveHandler() http.Handler {
@@ -332,35 +271,10 @@ func (s *BalanceWebService) ReserveHandler() http.Handler {
 
 		logger.Info("new reservation", zap.String("orderID", input.OrderId), zap.String("userID", input.UserId))
 
-		// return current balance data
-		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
-		var available, reserved decimal.Decimal
-		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
-		if err != nil {
-			protoErr, ok := err.(*proto.Error)
-			if !ok {
-				logger.Error("fetch balance error", zap.Error(err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			logger.Info("fetch balance failed", zap.Error(err))
-			output.Error = protoErr
-			output.UserBalance = nil
-		} else {
-			output.UserBalance.Value = available.StringFixedBank(2)
-			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-		}
-		utils.WriteOutput(r, w, logger, &output)
+		s.sendGenericOutputCurrentUserBalanceData(w, r, input.UserId)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodPost)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodPost)
 }
 
 func (s *BalanceWebService) CommitHandler() http.Handler {
@@ -396,35 +310,10 @@ func (s *BalanceWebService) CommitHandler() http.Handler {
 
 		logger.Info("new transaction (charge)", zap.Int64("txID", txID.Int64()))
 
-		// return current balance data
-		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
-		var available, reserved decimal.Decimal
-		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
-		if err != nil {
-			protoErr, ok := err.(*proto.Error)
-			if !ok {
-				logger.Error("fetch balance error", zap.Error(err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			logger.Info("fetch balance failed", zap.Error(err))
-			output.Error = protoErr
-			output.UserBalance = nil
-		} else {
-			output.UserBalance.Value = available.StringFixedBank(2)
-			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-		}
-		utils.WriteOutput(r, w, logger, &output)
+		s.sendGenericOutputCurrentUserBalanceData(w, r, input.UserId)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodPost)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodPost)
 }
 
 func (s *BalanceWebService) CancelHandler() http.Handler {
@@ -459,35 +348,10 @@ func (s *BalanceWebService) CancelHandler() http.Handler {
 
 		logger.Info("cancelled reservation", zap.String("orderID", input.OrderId), zap.String("userID", input.UserId))
 
-		// return current balance data
-		output.UserBalance = &proto.UserBalanceData{UserId: input.UserId}
-		var available, reserved decimal.Decimal
-		output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), input.UserId)
-		if err != nil {
-			protoErr, ok := err.(*proto.Error)
-			if !ok {
-				logger.Error("fetch balance error", zap.Error(err))
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			logger.Info("fetch balance failed", zap.Error(err))
-			output.Error = protoErr
-			output.UserBalance = nil
-		} else {
-			output.UserBalance.Value = available.StringFixedBank(2)
-			output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
-			output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
-		}
-		utils.WriteOutput(r, w, logger, &output)
+		s.sendGenericOutputCurrentUserBalanceData(w, r, input.UserId)
 	})
 
-	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodPost)
-	handler = utils.RequestLogger(handler, s.logger)
-	handler = utils.RequestID(handler)
-	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
-	return handler
+	return s.applyMiddlewares(handler, http.MethodPost)
 }
 
 const (
@@ -565,11 +429,39 @@ func (s *BalanceWebService) StatisticsCsvHandler() http.Handler {
 		}
 	})
 
+	return s.applyMiddlewares(handler, http.MethodGet)
+}
+
+func (s *BalanceWebService) applyMiddlewares(handler http.Handler, method string) http.Handler {
 	handler = utils.APIKey(handler, s.apiKey)
-	handler = utils.OnlyMethod(handler, http.MethodGet)
+	handler = utils.OnlyMethod(handler, method)
 	handler = utils.RequestLogger(handler, s.logger)
 	handler = utils.RequestID(handler)
 	handler = http.TimeoutHandler(handler, 5*time.Second, "")
-
 	return handler
+}
+
+func (s *BalanceWebService) sendGenericOutputCurrentUserBalanceData(w http.ResponseWriter, r *http.Request, userID string) {
+	logger := utils.GetRequestLogger(r)
+	var output proto.GenericOutput
+	var err error
+	output.UserBalance = &proto.UserBalanceData{UserId: userID}
+	var available, reserved decimal.Decimal
+	output.UserBalance.Currency, available, reserved, err = s.db.FetchUserBalance(r.Context(), userID)
+	if err != nil {
+		protoErr, ok := err.(*proto.Error)
+		if !ok {
+			logger.Error("fetch balance error", zap.Error(err))
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		logger.Info("fetch balance failed", zap.Error(err))
+		output.Error = protoErr
+		output.UserBalance = nil
+	} else {
+		output.UserBalance.Value = available.StringFixedBank(2)
+		output.UserBalance.ReservedValue = reserved.StringFixedBank(2)
+		output.UserBalance.IsOverdraft = available.LessThan(decimal.Zero)
+	}
+	utils.WriteOutput(r, w, logger, &output)
 }
