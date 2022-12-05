@@ -64,7 +64,7 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ListTransactionsOutput'
-  /topup:
+  /top-up:
     post:
       summary: 'add funds to the balance'
       description: |-
